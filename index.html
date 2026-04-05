@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DEO Action Radar - ASER Insights</title>
+    <script src="js/loader.js"></script>
+    <style>
+        :root {
+            --primary: #004a99;
+            --danger: #d9534f;
+            --warning: #f0ad4e;
+            --success: #5cb85c;
+            --bg: #f8f9fa;
+        }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg); margin: 0; padding: 20px; color: #333; }
+        .container { max-width: 1100px; margin: auto; }
+        header { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid var(--primary); padding-bottom: 10px; margin-bottom: 20px; }
+        h1 { color: var(--primary); margin: 0; font-size: 24px; }
+        
+        /* Stats Cards */
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
+        .stat-card { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); border-left: 5px solid var(--primary); }
+        .stat-card.critical { border-left-color: var(--danger); }
+        .stat-card h3 { margin: 0; font-size: 14px; color: #666; }
+        .stat-card p { font-size: 22px; font-weight: bold; margin: 10px 0 0 0; }
+
+        /* Controls */
+        .controls { background: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; display: flex; gap: 15px; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        select, button { padding: 8px 12px; border-radius: 4px; border: 1px solid #ccc; font-size: 14px; }
+        button { background: var(--primary); color: white; border: none; cursor: pointer; transition: 0.3s; }
+        button:hover { opacity: 0.8; }
+
+        /* Data Table */
+        table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        th { background: var(--primary); color: white; text-align: left; padding: 12px; font-size: 14px; }
+        td { padding: 12px; border-bottom: 1px solid #eee; font-size: 14px; }
+        tr:hover { background-color: #f1f5f9; }
+        
+        .badge { padding: 4px 8px; border-radius: 12px; font-size: 11px; font-weight: bold; text-transform: uppercase; }
+        .badge-danger { background: #ffdce0; color: var(--danger); }
+        .badge-warning { background: #fff4e5; color: #8a6d3b; }
+        .badge-success { background: #e6ffed; color: var(--success); }
+        
+        .drop-indicator { color: var(--danger); font-size: 12px; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <div>
+            <h1>DEO Action Radar (FLN Priority)</h1>
+            <p style="margin: 5px 0; color: #666;">Targeting Grade 3 Reading & Grade 5 Arithmetic Gaps</p>
+        </div>
+        <div id="last-updated" style="font-size: 12px; color: #999;">Data Source: ASER 2018-2024</div>
+    </header>
+
+    <div class="stats-grid">
+        <div class="stat-card critical">
+            <h3>States with Math Drops > 15%</h3>
+            <p id="math-alert-count">0</p>
+        </div>
+        <div class="stat-card">
+            <h3>Avg. Math Proficiency (2024)</h3>
+            <p id="avg-math">0%</p>
+        </div>
+        <div class="stat-card">
+            <h3>Avg. Reading Proficiency (2024)</h3>
+            <p id="avg-read">0%</p>
+        </div>
+        <div class="stat-card">
+            <h3>Visualize Trends</h3>
+            <canvas id="trendChart" height="60"></canvas>
+        </div>
+    </div>
+    <div style="margin: 30px 0 10px 0;">
+        <h2>State Time Series (2018-2024)</h2>
+        <label for="stateTrendSelect"><strong>Select State:</strong></label>
+        <select id="stateTrendSelect"></select>
+        <canvas id="stateTrendChart" height="80"></canvas>
+    </div>
+
+    <div class="controls">
+        <strong>Filter Action:</strong>
+        <select id="riskFilter" onchange="renderTable()">
+            <option value="all">Show All States</option>
+            <option value="critical">Critical (Math < 20%)</option>
+            <option value="high-drop">High Decline (> 10% Drop)</option>
+        </select>
+        <button onclick="resetInterventions()">Reset Logs</button>
+    </div>
+
+    <table id="stateTable">
+        <thead>
+            <tr>
+                <th>State Name</th>
+                <th>Math 2018</th>
+                <th>Math 2024</th>
+                <th>Trend (Math)</th>
+                <th>Reading 2024</th>
+                <th>Status / AI Flag</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody id="tableBody">
+            <!-- Data will be loaded dynamically -->
+        </tbody>
+    </table>
+    <div style="margin-top:30px;">
+        <h2>State Performance Highlights</h2>
+        <div class="stats-grid" style="margin-bottom:0;">
+            <div class="stat-card">
+                <h3>Top 5 States (Math 2024)</h3>
+                <ol id="topMath2024"></ol>
+            </div>
+            <div class="stat-card">
+                <h3>Bottom 5 States (Math 2024)</h3>
+                <ol id="bottomMath2024"></ol>
+            </div>
+            <div class="stat-card">
+                <h3>Top 5 States (Reading 2024)</h3>
+                <ol id="topRead2024"></ol>
+            </div>
+            <div class="stat-card">
+                <h3>Bottom 5 States (Reading 2024)</h3>
+                <ol id="bottomRead2024"></ol>
+            </div>
+        </div>
+    </div>
+    <div style="margin-top:30px;">
+        <h2>District Map (Beta)</h2>
+        <div style="margin-bottom:10px;">
+            <label for="stateMapSelect"><strong>Select State:</strong></label>
+            <select id="stateMapSelect"></select>
+        </div>
+        <canvas id="districtMapChart" height="120"></canvas>
+    </div>
+</div>
+
+<script>
+// Wait for data and Chart.js to be loaded
+document.addEventListener('edupulse-data-ready', function() {
+    if (window.ChartLoaded) {
+        initDashboard();
+    } else {
+        document.addEventListener('chartjs-ready', initDashboard, { once: true });
+    }
+});
+
+let districtMapChartInstance = null;
+
+let stateTrendChartInstance = null;
+function initDashboard() {
+    // Parse and merge data
+    const arith = window.eduPulseData.arith;
+    const read = window.eduPulseData.read;
+    const map = window.eduPulseData.map;
+    // Build state-level summary, skip header/NaN rows
+    let states = [];
+    for (let i = 0; i < arith.length; i++) {
+        const a = arith[i];
+        if (!a.State || typeof a.State !== 'string' || a.State === 'NaN') continue;
+        const r = read.find(x => x.State === a.State);
+        states.push({
+            state: a.State,
+            m18: a["% Std V (Division)"] !== undefined ? Math.round(a["% Std V (Division)"] * 1000) / 10 : 0,
+            m24: a["Unnamed: 6"] !== undefined ? Math.round(a["Unnamed: 6"] * 1000) / 10 : 0,
+            r24: r && r["2024 Std 3"] !== undefined ? Math.round(r["2024 Std 3"] * 1000) / 10 : 0,
+            status: "Normal"
+        });
+    }
+    // Fallback: if no states found, show error
+    if (states.length === 0) {
+        document.getElementById('tableBody').innerHTML = '<tr><td colspan="7" style="color:red;text-align:center;">No data found. Please check your data files.</td></tr>';
+        return;
+    }
+    window.aserData = states;
+    calculateStats();
+    renderTable();
+    renderTrendChart();
+    renderStatePerformanceHighlights(states);
+    renderDistrictMap(map);
+    renderStateTrendChart(arith, read);
+}
+
+function renderStatePerformanceHighlights(states) {
+    // Math 2024
+    const sortedMath = [...states].sort((a, b) => b.m24 - a.m24);
+    const sortedRead = [...states].sort((a, b) => b.r24 - a.r24);
+    const topMath = sortedMath.slice(0, 5);
+    const bottomMath = sortedMath.slice(-5).reverse();
+    const topRead = sortedRead.slice(0, 5);
+    const bottomRead = sortedRead.slice(-5).reverse();
+    document.getElementById('topMath2024').innerHTML = topMath.map(s => `<li>${s.state} <b>${s.m24}%</b></li>`).join('');
+    document.getElementById('bottomMath2024').innerHTML = bottomMath.map(s => `<li>${s.state} <b>${s.m24}%</b></li>`).join('');
+    document.getElementById('topRead2024').innerHTML = topRead.map(s => `<li>${s.state} <b>${s.r24}%</b></li>`).join('');
+    document.getElementById('bottomRead2024').innerHTML = bottomRead.map(s => `<li>${s.state} <b>${s.r24}%</b></li>`).join('');
+}
+
+function renderStateTrendChart(arith, read) {
+    // Get unique states
+    const states = Array.from(new Set(arith.map(d => d.State))).filter(s => s && s !== 'NaN');
+    const stateSelect = document.getElementById('stateTrendSelect');
+    stateSelect.innerHTML = states.map(s => `<option value="${s}">${s}</option>`).join('');
+    stateSelect.value = 'Andhra Pradesh';
+    stateSelect.onchange = () => updateStateTrendChart(arith, read, stateSelect.value);
+    updateStateTrendChart(arith, read, stateSelect.value);
+}
+
+function updateStateTrendChart(arith, read, state) {
+    const ctx = document.getElementById('stateTrendChart').getContext('2d');
+    const a = arith.find(d => d.State === state);
+    const r = read.find(d => d.State === state);
+    // Years
+    const years = [2018, 2022, 2024];
+    // Math: Std V (Division)
+    const mathVals = [a && a["% Std V (Division)"] ? Math.round(a["% Std V (Division)"] * 1000) / 10 : 0,
+                      a && a["Unnamed: 5"] ? Math.round(a["Unnamed: 5"] * 1000) / 10 : 0,
+                      a && a["Unnamed: 6"] ? Math.round(a["Unnamed: 6"] * 1000) / 10 : 0];
+    // Reading: Std 3
+    const readVals = [r && r["2018 Std 3"] ? Math.round(r["2018 Std 3"] * 1000) / 10 : 0,
+                      r && r["2022 Std 3"] ? Math.round(r["2022 Std 3"] * 1000) / 10 : 0,
+                      r && r["2024 Std 3"] ? Math.round(r["2024 Std 3"] * 1000) / 10 : 0];
+    if (stateTrendChartInstance) stateTrendChartInstance.destroy();
+    stateTrendChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: years,
+            datasets: [
+                { label: 'Math (Std V Division)', data: mathVals, borderColor: '#004a99', backgroundColor: 'rgba(0,74,153,0.1)', tension: 0.3, fill: true },
+                { label: 'Reading (Std III)', data: readVals, borderColor: '#5cb85c', backgroundColor: 'rgba(92,184,92,0.1)', tension: 0.3, fill: true }
+            ]
+        },
+        options: {
+            responsive: true,
+            plugins: { legend: { position: 'top' } },
+            scales: { y: { beginAtZero: true, max: 100 } }
+        }
+    });
+}
+
+function calculateStats() {
+    const aserData = window.aserData;
+    const mathDrops = aserData.filter(d => (d.m18 - d.m24) > 15).length;
+    const avgMath = (aserData.reduce((acc, curr) => acc + curr.m24, 0) / aserData.length).toFixed(1);
+    const avgRead = (aserData.reduce((acc, curr) => acc + curr.r24, 0) / aserData.length).toFixed(1);
+    document.getElementById('math-alert-count').innerText = mathDrops;
+    document.getElementById('avg-math').innerText = avgMath + "%";
+    document.getElementById('avg-read').innerText = avgRead + "%";
+}
+
+function renderTable() {
+    const aserData = window.aserData;
+    const filterValue = document.getElementById('riskFilter').value;
+    const tbody = document.getElementById('tableBody');
+    tbody.innerHTML = '';
+    aserData.forEach((row, index) => {
+        const mathDrop = (row.m18 - row.m24).toFixed(1);
+        let flag = "Stable";
+        let badgeClass = "badge-success";
+        if (row.m24 < 20) {
+            flag = "Critical Risk";
+            badgeClass = "badge-danger";
+        } else if (mathDrop > 10) {
+            flag = "Declining Fast";
+            badgeClass = "badge-warning";
+        }
+        if (filterValue === 'critical' && flag !== "Critical Risk") return;
+        if (filterValue === 'high-drop' && mathDrop <= 10) return;
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td><strong>${row.state}</strong></td>
+            <td>${row.m18}%</td>
+            <td style="color: ${row.m24 < 20 ? 'red' : 'black'}; font-weight: bold;">${row.m24}%</td>
+            <td><span class="drop-indicator">${mathDrop > 0 ? '↓ ' + mathDrop + '%' : '↑ ' + Math.abs(mathDrop) + '%'}</span></td>
+            <td>${row.r24}%</td>
+            <td><span class="badge ${badgeClass}">${row.status === 'Logged' ? 'Intervention Active' : flag}</span></td>
+            <td>
+                <button onclick="logIntervention(${index})" style="background: ${row.status === 'Logged' ? '#ccc' : ''}">
+                    ${row.status === 'Logged' ? 'Visit Logged' : 'Schedule Visit'}
+                </button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+function logIntervention(index) {
+    window.aserData[index].status = "Logged";
+    renderTable();
+    alert("Action Logged: District Education Officer notified to schedule an Arithmetic Training camp in " + window.aserData[index].state);
+}
+
+function resetInterventions() {
+    window.aserData.forEach(d => d.status = "Normal");
+    renderTable();
+}
+
+function renderTrendChart() {
+    const aserData = window.aserData;
+    const ctx = document.getElementById('trendChart').getContext('2d');
+    const labels = aserData.map(d => d.state);
+    const math2018 = aserData.map(d => d.m18);
+    const math2024 = aserData.map(d => d.m24);
+    const read2024 = aserData.map(d => d.r24);
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [
+                { label: 'Math 2018', data: math2018, backgroundColor: 'rgba(0,74,153,0.3)' },
+                { label: 'Math 2024', data: math2024, backgroundColor: 'rgba(0,74,153,0.7)' },
+                { label: 'Reading 2024', data: read2024, backgroundColor: 'rgba(92,184,92,0.5)' }
+            ]
+        },
+        options: {
+            responsive: true,
+            plugins: { legend: { position: 'top' } },
+            scales: { y: { beginAtZero: true, max: 100 } }
+        }
+    });
+}
+
+function renderDistrictMap(mapData) {
+    // Get unique states
+    const states = Array.from(new Set(mapData.map(d => d.State))).filter(s => s && s !== 'All India');
+    const stateSelect = document.getElementById('stateMapSelect');
+    stateSelect.innerHTML = states.map(s => `<option value="${s}">${s}</option>`).join('');
+    stateSelect.value = 'Andhra Pradesh';
+    stateSelect.onchange = () => updateDistrictMapChart(mapData, stateSelect.value);
+    updateDistrictMapChart(mapData, stateSelect.value);
+}
+
+function updateDistrictMapChart(mapData, state) {
+    const ctx = document.getElementById('districtMapChart').getContext('2d');
+    const filtered = mapData.filter(d => d.State === state);
+    const labels = filtered.map(d => d["District/Division"]);
+    const values = filtered.map(d => d["Value (%)"]);
+    if (districtMapChartInstance) districtMapChartInstance.destroy();
+    districtMapChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: state + ' District/Division Value (%)',
+                data: values,
+                backgroundColor: 'rgba(0,74,153,0.6)'
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true } }
+        }
+    });
+}
+</script>
+
+</body>
+</html>
